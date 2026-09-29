@@ -68,6 +68,7 @@ public class JarvisService extends Service implements RecognitionListener, TextT
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private AssistantProfile profile;
+    private AgentToolExecutor toolExecutor;
     private boolean recognizerReady;
     private boolean usingOnDeviceRecognizer;
     private boolean listening;
@@ -79,11 +80,13 @@ public class JarvisService extends Service implements RecognitionListener, TextT
     private boolean ttsReady;
     private String pendingSpeech;
     private boolean pendingSpeechCompletedCommand;
+    private boolean currentSpeechCompletedCommand;
 
     @Override
     public void onCreate() {
         super.onCreate();
         profile = AssistantPreferences.getProfile(this);
+        toolExecutor = new AgentToolExecutor(this);
         createChannel();
         Notification notification = buildNotification(profile.name + " inicializando");
         if (Build.VERSION.SDK_INT >= 29) {
@@ -356,29 +359,43 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         sendStatus("Processando: " + command, "processing");
         updateNotification("Consultando agente GPT");
 
-        String localReply = executeLocalAction(command);
-        if (localReply != null) {
-            remember("user", command);
-            remember("assistant", localReply);
-            speak(localReply, true);
-            return;
-        }
-
         JSONArray previousHistory = historyJson();
         executor.submit(() -> {
-            String reply;
+            String finalReply;
             try {
-                reply = askAssistant(command, previousHistory);
+                finalReply = runAgentLoop(command, previousHistory);
             } catch (Exception e) {
-                reply = "Não consegui acessar o agente GPT agora. Tente novamente em alguns segundos.";
+                finalReply = "Não consegui acessar o agente GPT agora. Tente novamente em alguns segundos.";
             }
-            final String answer = reply;
+            final String answer = finalReply;
             main.post(() -> {
                 remember("user", command);
                 remember("assistant", answer);
                 speak(answer, true);
             });
         });
+    }
+
+    private String runAgentLoop(String command, JSONArray previousHistory) throws Exception {
+        ToolFeedback feedback = null;
+        String lastToolResult = "";
+        for (int step = 0; step < 3; step++) {
+            AgentResponse response = askAssistant(command, previousHistory, feedback);
+            if (response.toolName == null || response.toolName.trim().isEmpty()) {
+                String reply = response.reply == null ? "" : response.reply.trim();
+                if (!reply.isEmpty()) return reply;
+                if (!lastToolResult.isEmpty()) return lastToolResult;
+                return "Concluído.";
+            }
+
+            sendStatus("Executando: " + response.toolName, "tool");
+            updateNotification("Executando " + response.toolName);
+            AgentToolExecutor.ToolResult result = toolExecutor.execute(response.toolName, response.toolArguments);
+            lastToolResult = result.result;
+            feedback = new ToolFeedback(response.toolName, result.ok, result.result);
+            sendStatus((result.ok ? "Ferramenta concluída: " : "Ferramenta falhou: ") + result.result, result.ok ? "tool_done" : "tool_error");
+        }
+        return lastToolResult.isEmpty() ? "Não consegui concluir essa ação." : lastToolResult;
     }
 
     private String extractAddressPreference(String command) {
@@ -414,7 +431,7 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         updateNotification("Aguardando JARVIS ou HELENA");
     }
 
-    private String askAssistant(String command, JSONArray previousHistory) throws Exception {
+    private AgentResponse askAssistant(String command, JSONArray previousHistory, ToolFeedback feedback) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(BACKEND).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(15000);
@@ -429,15 +446,20 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         String address = AssistantPreferences.getAddressName(this);
         if (address != null && !address.trim().isEmpty()) body.put("addressName", address.trim());
         body.put("history", previousHistory);
+        if (feedback != null) {
+            JSONObject toolResult = new JSONObject();
+            toolResult.put("name", feedback.name);
+            toolResult.put("ok", feedback.ok);
+            toolResult.put("result", feedback.result);
+            body.put("toolResult", toolResult);
+        }
         byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
         try (OutputStream os = connection.getOutputStream()) {
             os.write(bytes);
         }
 
         int code = connection.getResponseCode();
-        InputStream stream = code >= 200 && code < 300
-                ? connection.getInputStream()
-                : connection.getErrorStream();
+        InputStream stream = code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream();
         StringBuilder sb = new StringBuilder();
         if (stream != null) {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
@@ -447,8 +469,16 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         }
         connection.disconnect();
         if (code < 200 || code >= 300) throw new IllegalStateException("HTTP " + code + " " + sb);
+
         JSONObject result = new JSONObject(sb.toString());
-        return result.optString("reply", "Estou ouvindo.");
+        String reply = result.optString("reply", "");
+        JSONObject tool = result.optJSONObject("tool");
+        if (tool == null) return new AgentResponse(reply, null, new JSONObject());
+        return new AgentResponse(
+                reply,
+                tool.optString("name", ""),
+                tool.optJSONObject("arguments") == null ? new JSONObject() : tool.optJSONObject("arguments")
+        );
     }
 
     private JSONArray historyJson() {
@@ -491,12 +521,8 @@ public class JarvisService extends Service implements RecognitionListener, TextT
                 Intent cal = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CALENDAR);
                 return launchIntent(cal, "Abrindo o calendário.");
             }
-            if (n.contains("mapa") || n.contains("maps")) {
-                return launchIntent(new Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=")), "Abrindo os mapas.");
-            }
-            if (n.contains("navegador") || n.contains("chrome")) {
-                return launchIntent(new Intent(Intent.ACTION_VIEW, Uri.parse("https://google.com")), "Abrindo o navegador.");
-            }
+            if (n.contains("mapa") || n.contains("maps")) return launchIntent(new Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=")), "Abrindo os mapas.");
+            if (n.contains("navegador") || n.contains("chrome")) return launchIntent(new Intent(Intent.ACTION_VIEW, Uri.parse("https://google.com")), "Abrindo o navegador.");
         }
         return null;
     }
@@ -533,6 +559,7 @@ public class JarvisService extends Service implements RecognitionListener, TextT
     }
 
     private void speakNow(String text, boolean completedCommand) {
+        currentSpeechCompletedCommand = completedCommand;
         String utteranceId = profile.id + "-" + System.currentTimeMillis();
         Bundle params = new Bundle();
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
@@ -560,8 +587,8 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         applyTtsProfile();
         tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
             @Override public void onStart(String utteranceId) {}
-            @Override public void onError(String utteranceId) { main.post(() -> finishSpeech(false)); }
-            @Override public void onDone(String utteranceId) { main.post(() -> finishSpeech(false)); }
+            @Override public void onError(String utteranceId) { main.post(() -> finishSpeech(currentSpeechCompletedCommand)); }
+            @Override public void onDone(String utteranceId) { main.post(() -> finishSpeech(currentSpeechCompletedCommand)); }
         });
         sendStatus("Voz pronta · " + profile.name, "tts_ready");
         if (pendingSpeech != null) {
@@ -712,6 +739,28 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         ConversationTurn(String role, String content) {
             this.role = role;
             this.content = content;
+        }
+    }
+
+    private static final class ToolFeedback {
+        final String name;
+        final boolean ok;
+        final String result;
+        ToolFeedback(String name, boolean ok, String result) {
+            this.name = name;
+            this.ok = ok;
+            this.result = result;
+        }
+    }
+
+    private static final class AgentResponse {
+        final String reply;
+        final String toolName;
+        final JSONObject toolArguments;
+        AgentResponse(String reply, String toolName, JSONObject toolArguments) {
+            this.reply = reply;
+            this.toolName = toolName;
+            this.toolArguments = toolArguments;
         }
     }
 }
