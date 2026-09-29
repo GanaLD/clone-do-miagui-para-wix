@@ -8,6 +8,7 @@ import android.app.Service;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.media.AudioAttributes;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -21,7 +22,6 @@ import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
-import android.net.Uri;
 
 import org.json.JSONObject;
 
@@ -36,7 +36,6 @@ import java.text.Normalizer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -45,6 +44,8 @@ import java.util.concurrent.Executors;
 public class JarvisService extends Service implements RecognitionListener, TextToSpeech.OnInitListener {
     public static final String ACTION_START = "com.mensagemstudio.jarvis.START";
     public static final String ACTION_COMMAND = "com.mensagemstudio.jarvis.COMMAND";
+    public static final String ACTION_SET_IDENTITY = "com.mensagemstudio.jarvis.SET_IDENTITY";
+    public static final String ACTION_TEST_VOICE = "com.mensagemstudio.jarvis.TEST_VOICE";
     public static final String ACTION_STATUS = "com.mensagemstudio.jarvis.STATUS";
 
     private static final String CHANNEL_ID = "jarvis_voice";
@@ -55,6 +56,7 @@ public class JarvisService extends Service implements RecognitionListener, TextT
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
+    private AssistantProfile profile;
     private boolean recognizerReady;
     private boolean listening;
     private boolean busy;
@@ -64,8 +66,9 @@ public class JarvisService extends Service implements RecognitionListener, TextT
     @Override
     public void onCreate() {
         super.onCreate();
+        profile = AssistantPreferences.getProfile(this);
         createChannel();
-        startForeground(NOTIFICATION_ID, buildNotification("JARVIS aguardando chamada"));
+        startForeground(NOTIFICATION_ID, buildNotification(profile.name + " aguardando chamada"));
 
         if (SpeechRecognizer.isRecognitionAvailable(this)) {
             recognizer = SpeechRecognizer.createSpeechRecognizer(this);
@@ -82,6 +85,15 @@ public class JarvisService extends Service implements RecognitionListener, TextT
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null) {
             String action = intent.getAction();
+            if (ACTION_SET_IDENTITY.equals(action)) {
+                AssistantProfile next = AssistantProfile.fromId(intent.getStringExtra("identity"));
+                switchIdentity(next, false);
+                return START_STICKY;
+            }
+            if (ACTION_TEST_VOICE.equals(action)) {
+                speak(profile.randomTestPhrase(), false);
+                return START_STICKY;
+            }
             if (ACTION_COMMAND.equals(action)) {
                 String command = intent.getStringExtra("command");
                 if (command != null && !command.trim().isEmpty()) {
@@ -102,7 +114,7 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         Notification.Builder b = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
-        return b.setContentTitle("JARVIS ativo")
+        return b.setContentTitle(profile.name + " ativo")
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentIntent(pi)
@@ -114,9 +126,9 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "JARVIS Voice Assistant",
+                    "Assistente de voz JARVIS / HELENA",
                     NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("Mantém o JARVIS ouvindo em segundo plano");
+            channel.setDescription("Mantém o assistente ouvindo em segundo plano");
             NotificationManager nm = getSystemService(NotificationManager.class);
             nm.createNotificationChannel(channel);
         }
@@ -140,8 +152,8 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         try {
             recognizer.startListening(intent);
             listening = true;
-            sendStatus(awaitingCommand ? "Pode falar o comando…" : "Aguardando “JARVIS”…", "status");
-            updateNotification(awaitingCommand ? "Ouvindo seu comando" : "Aguardando JARVIS");
+            sendStatus(awaitingCommand ? "Pode falar o comando…" : "Aguardando “" + profile.name + "”…", "status");
+            updateNotification(awaitingCommand ? "Ouvindo seu comando" : "Aguardando " + profile.name);
         } catch (Exception e) {
             listening = false;
             scheduleListen(1200);
@@ -168,15 +180,16 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         sendStatus("Você: " + heard, "heard");
 
         String normalized = normalize(heard);
+        String wake = profile.wakeWord;
         if (awaitingCommand) {
             awaitingCommand = false;
-            if (!normalized.equals("jarvis")) {
+            if (!normalized.equals(wake)) {
                 processCommand(heard);
                 return;
             }
         }
 
-        int idx = normalized.indexOf("jarvis");
+        int idx = normalized.indexOf(wake);
         if (idx < 0) {
             scheduleListen(350);
             return;
@@ -185,26 +198,40 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         String remainder = extractAfterWakeWord(heard);
         if (remainder.isEmpty()) {
             awaitingCommand = true;
-            speak("Sim?", false);
+            speak(profile.randomGreeting(), false);
         } else {
             processCommand(remainder);
         }
     }
 
     private String extractAfterWakeWord(String original) {
+        String wake = profile.wakeWord;
         String lower = normalize(original);
-        int idx = lower.indexOf("jarvis");
+        int idx = lower.indexOf(wake);
         if (idx < 0) return "";
 
         String originalLower = original.toLowerCase(Locale.ROOT);
-        int rawIdx = originalLower.indexOf("jarvis");
+        int rawIdx = originalLower.indexOf(wake);
         if (rawIdx < 0) return "";
-        String remainder = original.substring(Math.min(original.length(), rawIdx + 6)).trim();
+        String remainder = original.substring(Math.min(original.length(), rawIdx + wake.length())).trim();
         return remainder.replaceFirst("^[\\s,.:;!?\\-]+", "").trim();
     }
 
     private void processCommand(String command) {
         if (command == null || command.trim().isEmpty()) return;
+
+        AssistantProfile requested = requestedIdentity(command);
+        if (requested != null) {
+            busy = true;
+            stopListeningQuietly();
+            if (requested.id.equals(profile.id)) {
+                speak(profile.randomGreeting(), true);
+            } else {
+                switchIdentity(requested, true);
+            }
+            return;
+        }
+
         busy = true;
         stopListeningQuietly();
         sendStatus("Processando: " + command, "status");
@@ -219,7 +246,7 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         executor.submit(() -> {
             String reply;
             try {
-                reply = askJarvis(command);
+                reply = askAssistant(command);
             } catch (Exception e) {
                 reply = "Não consegui acessar o GPT agora. Tente novamente em alguns segundos.";
             }
@@ -228,7 +255,33 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         });
     }
 
-    private String askJarvis(String command) throws Exception {
+    private AssistantProfile requestedIdentity(String command) {
+        String n = normalize(command);
+        boolean switchVerb = n.contains("mudar") || n.contains("mude") || n.contains("trocar")
+                || n.contains("troque") || n.contains("usar") || n.contains("use")
+                || n.contains("chamar") || n.contains("chame") || n.contains("voltar");
+        if (!switchVerb) return null;
+        if (n.contains("helena")) return AssistantProfile.HELENA;
+        if (n.contains("jarvis")) return AssistantProfile.JARVIS;
+        return null;
+    }
+
+    private void switchIdentity(AssistantProfile next, boolean speakConfirmation) {
+        profile = next;
+        awaitingCommand = false;
+        AssistantPreferences.setProfile(this, next);
+        applyTtsProfile();
+        sendStatus("Identidade ativa: " + profile.name, "identity");
+        updateNotification("Aguardando " + profile.name);
+        if (speakConfirmation) {
+            speak("Claro. " + profile.randomGreeting(), true);
+        } else {
+            busy = false;
+            scheduleListen(250);
+        }
+    }
+
+    private String askAssistant(String command) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(BACKEND).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(15000);
@@ -239,6 +292,7 @@ public class JarvisService extends Service implements RecognitionListener, TextT
 
         JSONObject body = new JSONObject();
         body.put("command", command);
+        body.put("identity", profile.id);
         byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
         try (OutputStream os = connection.getOutputStream()) {
             os.write(bytes);
@@ -309,8 +363,8 @@ public class JarvisService extends Service implements RecognitionListener, TextT
     private void speak(String text, boolean completedCommand) {
         busy = true;
         stopListeningQuietly();
-        sendStatus("JARVIS: " + text, "reply");
-        updateNotification("JARVIS respondendo");
+        sendStatus(profile.name + ": " + text, "reply");
+        updateNotification(profile.name + " respondendo");
 
         if (tts == null) {
             busy = false;
@@ -319,43 +373,57 @@ public class JarvisService extends Service implements RecognitionListener, TextT
             return;
         }
 
-        String utteranceId = "jarvis-" + System.currentTimeMillis();
+        String utteranceId = profile.id + "-" + System.currentTimeMillis();
         Bundle params = new Bundle();
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId);
+    }
+
+    private void applyTtsProfile() {
+        if (tts == null) return;
+        Locale ptBr = new Locale("pt", "BR");
+        tts.setLanguage(ptBr);
+        tts.setSpeechRate(profile.speechRate);
+        tts.setPitch(profile.speechPitch);
+        if (Build.VERSION.SDK_INT >= 21) {
+            AudioAttributes attrs = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build();
+            tts.setAudioAttributes(attrs);
+
+            Voice best = null;
+            int bestScore = Integer.MIN_VALUE;
+            Set<Voice> voices = tts.getVoices();
+            if (voices != null) {
+                for (Voice voice : voices) {
+                    Locale l = voice.getLocale();
+                    if (l == null || !"pt".equalsIgnoreCase(l.getLanguage()) || !"BR".equalsIgnoreCase(l.getCountry())) continue;
+                    int score = voice.getQuality();
+                    String voiceName = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
+                    for (String token : profile.preferredVoiceTokens) {
+                        if (voiceName.contains(token.toLowerCase(Locale.ROOT))) score += 10000;
+                    }
+                    if (best == null || score > bestScore) {
+                        best = voice;
+                        bestScore = score;
+                    }
+                }
+            }
+            if (best != null) tts.setVoice(best);
+        }
     }
 
     @Override
     public void onInit(int status) {
         if (status == TextToSpeech.SUCCESS) {
-            Locale ptBr = new Locale("pt", "BR");
-            tts.setLanguage(ptBr);
-            tts.setSpeechRate(0.96f);
-            tts.setPitch(0.92f);
-            if (Build.VERSION.SDK_INT >= 21) {
-                AudioAttributes attrs = new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build();
-                tts.setAudioAttributes(attrs);
-                Voice best = null;
-                Set<Voice> voices = tts.getVoices();
-                if (voices != null) {
-                    for (Voice voice : voices) {
-                        Locale l = voice.getLocale();
-                        if (l != null && "pt".equalsIgnoreCase(l.getLanguage()) && "BR".equalsIgnoreCase(l.getCountry())) {
-                            if (best == null || voice.getQuality() > best.getQuality()) best = voice;
-                        }
-                    }
-                }
-                if (best != null) tts.setVoice(best);
-            }
+            applyTtsProfile();
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override public void onStart(String utteranceId) {}
                 @Override public void onError(String utteranceId) { onDone(utteranceId); }
                 @Override public void onDone(String utteranceId) {
                     main.post(() -> {
                         busy = false;
-                        updateNotification(awaitingCommand ? "Ouvindo seu comando" : "Aguardando JARVIS");
+                        updateNotification(awaitingCommand ? "Ouvindo seu comando" : "Aguardando " + profile.name);
                         scheduleListen(350);
                     });
                 }
@@ -365,11 +433,10 @@ public class JarvisService extends Service implements RecognitionListener, TextT
     }
 
     private String normalize(String value) {
-        String n = Normalizer.normalize(value, Normalizer.Form.NFD)
+        return Normalizer.normalize(value, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "")
                 .toLowerCase(Locale.ROOT)
                 .trim();
-        return n;
     }
 
     private void sendStatus(String message, String state) {
@@ -377,6 +444,8 @@ public class JarvisService extends Service implements RecognitionListener, TextT
         i.setPackage(getPackageName());
         i.putExtra("message", message);
         i.putExtra("state", state);
+        i.putExtra("identity", profile.id);
+        i.putExtra("assistantName", profile.name);
         sendBroadcast(i);
     }
 
