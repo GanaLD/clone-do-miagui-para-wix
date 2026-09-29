@@ -9,10 +9,14 @@ public final class AssistantProfile {
             "JARVIS",
             "jarvis",
             new String[]{"Sim?", "Estou ouvindo.", "Pois não?"},
-            0.96f,
-            0.92f,
-            new String[]{"antonio", "antônio", "male", "mascul", "natural", "neural"},
-            new String[]{"Sim?", "Estou ouvindo.", "À disposição."}
+            0.93f,
+            0.90f,
+            new String[]{"male_1", "male_2", "male_3", "masculine", "masculino", "antonio", "antônio", "natural", "neural", "network"},
+            new String[]{
+                    "Sim. Estou ouvindo.",
+                    "À disposição. Como posso ajudar?",
+                    "Sistema pronto. Pode falar."
+            }
     );
 
     public static final AssistantProfile HELENA = new AssistantProfile(
@@ -20,12 +24,12 @@ public final class AssistantProfile {
             "HELENA",
             "helena",
             new String[]{"Sim?", "Estou ouvindo.", "Pois não?", "À disposição."},
-            0.94f,
-            0.88f,
-            new String[]{"francisca", "luciana", "maria", "female", "feminin", "natural", "neural"},
+            0.96f,
+            0.99f,
+            new String[]{"female_1", "female_2", "female_3", "feminine", "feminino", "francisca", "luciana", "maria", "pt-br-x-afs", "natural", "neural", "network"},
             new String[]{
-                    "Pois não?",
-                    "Estou ouvindo.",
+                    "Pois não? Estou ouvindo.",
+                    "Claro. Pode falar.",
                     "Encontrei uma inconsistência no arquivo. Não é grave, mas achei melhor avisar antes de fazer qualquer alteração.",
                     "O projeto continua aberto como você deixou. Não alterei a animação.",
                     "Posso continuar daqui."
