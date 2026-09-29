@@ -27,18 +27,29 @@ import java.util.List;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 1101;
+    private TextView titleView;
     private TextView statusView;
+    private TextView hintView;
     private TextView logView;
     private EditText commandInput;
+    private Button startButton;
+    private Button jarvisButton;
+    private Button helenaButton;
+    private AssistantProfile profile;
 
     private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String text = intent.getStringExtra("message");
             String state = intent.getStringExtra("state");
+            String identity = intent.getStringExtra("identity");
+            if (identity != null) {
+                profile = AssistantProfile.fromId(identity);
+                updateIdentityUi();
+            }
             if (text != null) {
                 statusView.setText(text);
-                if ("reply".equals(state) || "heard".equals(state)) {
+                if ("reply".equals(state) || "heard".equals(state) || "identity".equals(state)) {
                     logView.setText(text + "\n\n" + logView.getText());
                 }
             }
@@ -48,6 +59,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        profile = AssistantPreferences.getProfile(this);
         Window window = getWindow();
         window.setStatusBarColor(Color.rgb(5, 7, 10));
         window.setNavigationBarColor(Color.rgb(5, 7, 10));
@@ -60,6 +72,7 @@ public class MainActivity extends Activity {
         } else {
             registerReceiver(statusReceiver, filter);
         }
+        updateIdentityUi();
         requestAndStart();
     }
 
@@ -78,13 +91,43 @@ public class MainActivity extends Activity {
         TextView eyebrow = label("OPENAI AGENT · ANDROID VOICE CORE", 11, 0xFF72DFF4);
         root.addView(eyebrow);
 
-        TextView title = label("JARVIS", 42, Color.WHITE);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title);
+        titleView = label(profile.name, 42, Color.WHITE);
+        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        root.addView(titleView);
 
         TextView online = label("●  ONLINE", 12, 0xFF49E7FF);
-        online.setPadding(0, dp(4), 0, dp(18));
+        online.setPadding(0, dp(4), 0, dp(14));
         root.addView(online);
+
+        LinearLayout identityPanel = new LinearLayout(this);
+        identityPanel.setOrientation(LinearLayout.VERTICAL);
+        identityPanel.setPadding(dp(12), dp(10), dp(12), dp(10));
+        identityPanel.setBackground(makeRounded(0xFF0B1016, 0xFF26343C));
+        root.addView(identityPanel, fullWidthWrapParams(0, 0, 0, dp(14)));
+
+        TextView identityLabel = label("ASSISTENTE", 10, 0xFF72DFF4);
+        identityLabel.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        identityPanel.addView(identityLabel);
+
+        LinearLayout identityRow = new LinearLayout(this);
+        identityRow.setOrientation(LinearLayout.HORIZONTAL);
+        identityRow.setPadding(0, dp(8), 0, 0);
+        identityPanel.addView(identityRow);
+
+        jarvisButton = choiceButton("JARVIS", profile == AssistantProfile.JARVIS);
+        helenaButton = choiceButton("HELENA", profile == AssistantProfile.HELENA);
+        Button testVoice = choiceButton("TESTAR VOZ", false);
+        jarvisButton.setOnClickListener(v -> selectIdentity(AssistantProfile.JARVIS));
+        helenaButton.setOnClickListener(v -> selectIdentity(AssistantProfile.HELENA));
+        testVoice.setOnClickListener(v -> testVoice());
+
+        LinearLayout.LayoutParams identityButtonParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        identityButtonParams.setMargins(0, 0, dp(6), 0);
+        identityRow.addView(jarvisButton, identityButtonParams);
+        LinearLayout.LayoutParams helenaParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        helenaParams.setMargins(0, 0, dp(6), 0);
+        identityRow.addView(helenaButton, helenaParams);
+        identityRow.addView(testVoice, new LinearLayout.LayoutParams(0, dp(44), 1.15f));
 
         TextView orb = label("◉", 112, 0xFF49E7FF);
         orb.setGravity(Gravity.CENTER);
@@ -98,30 +141,30 @@ public class MainActivity extends Activity {
         orbParams.setMargins(0, dp(10), 0, dp(16));
         root.addView(orb, orbParams);
 
-        statusView = label("INICIANDO JARVIS…", 15, Color.WHITE);
+        statusView = label("INICIANDO " + profile.name + "…", 15, Color.WHITE);
         statusView.setGravity(Gravity.CENTER);
         statusView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         root.addView(statusView);
 
-        TextView hint = label("Diga “JARVIS” e depois seu comando. O serviço continua ativo em segundo plano enquanto o Android permitir.", 12, 0xFF94A3AD);
-        hint.setGravity(Gravity.CENTER);
-        hint.setPadding(dp(8), dp(8), dp(8), dp(18));
-        root.addView(hint);
+        hintView = label("Diga “" + profile.name + "” e depois seu comando. O serviço continua ativo em segundo plano enquanto o Android permitir.", 12, 0xFF94A3AD);
+        hintView.setGravity(Gravity.CENTER);
+        hintView.setPadding(dp(8), dp(8), dp(8), dp(18));
+        root.addView(hintView);
 
-        Button start = button("ATIVAR JARVIS");
-        start.setOnClickListener(v -> requestAndStart());
-        root.addView(start, fullWidthParams(0, 0, 0, dp(8)));
+        startButton = button("ATIVAR " + profile.name);
+        startButton.setOnClickListener(v -> requestAndStart());
+        root.addView(startButton, fullWidthParams(0, 0, 0, dp(8)));
 
         Button stop = button("PARAR ESCUTA");
         stop.setTextColor(0xFFB7C1C7);
         stop.setBackground(makeRounded(0xFF10161B, 0xFF2B353C));
         stop.setOnClickListener(v -> {
             stopService(new Intent(this, JarvisService.class));
-            statusView.setText("JARVIS PARADO");
+            statusView.setText(profile.name + " PARADO");
         });
         root.addView(stop, fullWidthParams(0, 0, 0, dp(18)));
 
-        TextView actions = label("AÇÕES LOCAIS: YouTube · WhatsApp · Spotify · câmera · configurações · calendário · mapas · ChatGPT", 11, 0xFF72DFF4);
+        TextView actions = label("AÇÕES COMPARTILHADAS: YouTube · WhatsApp · Spotify · câmera · configurações · calendário · mapas · ChatGPT", 11, 0xFF72DFF4);
         actions.setPadding(dp(2), 0, dp(2), dp(14));
         root.addView(actions);
 
@@ -150,12 +193,42 @@ public class MainActivity extends Activity {
         logView = label("Sistema pronto para iniciar.", 13, 0xFFC8D0D5);
         logView.setPadding(dp(14), dp(14), dp(14), dp(14));
         logView.setBackground(makeRounded(0xFF090E12, 0xFF1F2A31));
-        root.addView(logView, fullWidthParams(0, 0, 0, dp(10)));
+        root.addView(logView, fullWidthWrapParams(0, 0, 0, dp(10)));
 
-        TextView footer = label("JARVIS · GPT VOICE ASSISTANT", 10, 0xFF53616A);
+        TextView footer = label("UM AGENTE · DUAS IDENTIDADES · GPT VOICE ASSISTANT", 10, 0xFF53616A);
         footer.setGravity(Gravity.CENTER);
         root.addView(footer);
         return scroll;
+    }
+
+    private void selectIdentity(AssistantProfile next) {
+        profile = next;
+        AssistantPreferences.setProfile(this, next);
+        updateIdentityUi();
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            Intent intent = new Intent(this, JarvisService.class);
+            intent.setAction(JarvisService.ACTION_SET_IDENTITY);
+            intent.putExtra("identity", next.id);
+            startServiceCompat(intent);
+        }
+    }
+
+    private void testVoice() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestAndStart();
+            return;
+        }
+        Intent intent = new Intent(this, JarvisService.class);
+        intent.setAction(JarvisService.ACTION_TEST_VOICE);
+        startServiceCompat(intent);
+    }
+
+    private void updateIdentityUi() {
+        if (titleView != null) titleView.setText(profile.name);
+        if (hintView != null) hintView.setText("Diga “" + profile.name + "” e depois seu comando. O serviço continua ativo em segundo plano enquanto o Android permitir.");
+        if (startButton != null) startButton.setText("ATIVAR " + profile.name);
+        if (jarvisButton != null) applyChoiceStyle(jarvisButton, profile == AssistantProfile.JARVIS);
+        if (helenaButton != null) applyChoiceStyle(helenaButton, profile == AssistantProfile.HELENA);
     }
 
     private void requestAndStart() {
@@ -169,7 +242,7 @@ public class MainActivity extends Activity {
         if (!missing.isEmpty()) {
             requestPermissions(missing.toArray(new String[0]), REQUEST_PERMISSIONS);
         } else {
-            startJarvis();
+            startAssistant();
         }
     }
 
@@ -177,17 +250,17 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_PERMISSIONS && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            startJarvis();
+            startAssistant();
         } else if (requestCode == REQUEST_PERMISSIONS) {
             statusView.setText("PERMISSÃO DE MICROFONE NECESSÁRIA");
         }
     }
 
-    private void startJarvis() {
+    private void startAssistant() {
         Intent intent = new Intent(this, JarvisService.class);
         intent.setAction(JarvisService.ACTION_START);
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent); else startService(intent);
-        statusView.setText("JARVIS ATIVO · AGUARDANDO CHAMADA");
+        startServiceCompat(intent);
+        statusView.setText(profile.name + " ATIVO · AGUARDANDO CHAMADA");
     }
 
     private void sendManualCommand() {
@@ -196,8 +269,12 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(this, JarvisService.class);
         intent.setAction(JarvisService.ACTION_COMMAND);
         intent.putExtra("command", command);
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent); else startService(intent);
+        startServiceCompat(intent);
         commandInput.setText("");
+    }
+
+    private void startServiceCompat(Intent intent) {
+        if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent); else startService(intent);
     }
 
     private TextView label(String text, int sp, int color) {
@@ -219,6 +296,21 @@ public class MainActivity extends Activity {
         return b;
     }
 
+    private Button choiceButton(String text, boolean active) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextSize(10);
+        b.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        b.setAllCaps(false);
+        applyChoiceStyle(b, active);
+        return b;
+    }
+
+    private void applyChoiceStyle(Button button, boolean active) {
+        button.setTextColor(active ? 0xFF001014 : 0xFFB7C1C7);
+        button.setBackground(makeRounded(active ? 0xFF49E7FF : 0xFF10161B, active ? 0xFF49E7FF : 0xFF2B353C));
+    }
+
     private GradientDrawable makeRounded(int fill, int stroke) {
         GradientDrawable d = new GradientDrawable();
         d.setColor(fill);
@@ -230,6 +322,13 @@ public class MainActivity extends Activity {
     private LinearLayout.LayoutParams fullWidthParams(int l, int t, int r, int b) {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
+        p.setMargins(l, t, r, b);
+        return p;
+    }
+
+    private LinearLayout.LayoutParams fullWidthWrapParams(int l, int t, int r, int b) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         p.setMargins(l, t, r, b);
         return p;
     }
