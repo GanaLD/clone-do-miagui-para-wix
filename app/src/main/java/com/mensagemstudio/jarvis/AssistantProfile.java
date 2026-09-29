@@ -8,25 +8,25 @@ public final class AssistantProfile {
             "jarvis",
             "JARVIS",
             "jarvis",
-            new String[]{"Sim, senhor?", "Estou ouvindo."},
+            new String[]{"Sim?", "Estou ouvindo.", "Pois não?"},
             0.96f,
             0.92f,
             new String[]{"antonio", "antônio", "male", "mascul", "natural", "neural"},
-            new String[]{"Sim, senhor?", "Estou ouvindo."}
+            new String[]{"Sim?", "Estou ouvindo.", "À disposição."}
     );
 
     public static final AssistantProfile HELENA = new AssistantProfile(
             "helena",
             "HELENA",
             "helena",
-            new String[]{"Sim?", "Estou ouvindo.", "Pois não?", "Sim, Gabriel?", "À disposição."},
+            new String[]{"Sim?", "Estou ouvindo.", "Pois não?", "À disposição."},
             0.94f,
             0.88f,
             new String[]{"francisca", "luciana", "maria", "female", "feminin", "natural", "neural"},
             new String[]{
                     "Pois não?",
                     "Estou ouvindo.",
-                    "Gabriel, encontrei uma inconsistência no arquivo. Não é grave, mas achei melhor avisá-lo antes de fazer qualquer alteração.",
+                    "Encontrei uma inconsistência no arquivo. Não é grave, mas achei melhor avisar antes de fazer qualquer alteração.",
                     "O projeto continua aberto como você deixou. Não alterei a animação.",
                     "Posso continuar daqui."
             }
@@ -66,6 +66,14 @@ public final class AssistantProfile {
     }
 
     public String randomGreeting() {
+        return randomGreeting("");
+    }
+
+    public String randomGreeting(String addressName) {
+        String clean = addressName == null ? "" : addressName.trim();
+        if (!clean.isEmpty() && ThreadLocalRandom.current().nextInt(4) == 0) {
+            return "Sim, " + clean + "?";
+        }
         if (greetingVariants.length == 0) return "Estou ouvindo.";
         return greetingVariants[ThreadLocalRandom.current().nextInt(greetingVariants.length)];
     }
