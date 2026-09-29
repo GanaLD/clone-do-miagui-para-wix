@@ -29,6 +29,30 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Restore stable JARVIS signing key
+        id: signing-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: jarvis-android-signing-key-v1
+
+      - name: Create stable JARVIS signing key
+        if: steps.signing-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -v \
+            -keystore ~/.android/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -dname "CN=JARVIS Android,O=Mensagem Studio,C=BR" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000
+
+      - name: Print signing certificate fingerprint
+        run: keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | grep -E "SHA256:|Owner:|Valid from"
+
       - name: Apply Google TTS dual-voice tuning
         run: python3 scripts/tune_tts.py
 
@@ -48,18 +72,17 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml | grep -E "PermissionSetupActivity|JarvisAccessibilityService|JarvisNotificationListenerService|JarvisVoiceInteractionService|READ_MEDIA_AUDIO|CALL_PHONE|READ_CONTACTS" || true
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-Voice-Agent-v1.6-Dual-Voices-Device-Control-Android16.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-Voice-Agent-v1.6.1-Stable-Signed-Android16.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-HELENA-Voice-Agent-v1.6-Dual-Voices-Device-Control-Android16
-          path: JARVIS-HELENA-Voice-Agent-v1.6-Dual-Voices-Device-Control-Android16.apk
+          name: JARVIS-HELENA-Voice-Agent-v1.6.1-Stable-Signed-Android16
+          path: JARVIS-HELENA-Voice-Agent-v1.6.1-Stable-Signed-Android16.apk
           if-no-files-found: error
           retention-days: 30
 
       - name: Install and launch on Android 16 emulator
-        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -69,6 +92,6 @@ jobs:
           script: |
             adb shell settings put global verifier_verify_adb_installs 0 || true
             adb shell settings put global package_verifier_enable 0 || true
-            adb install --no-streaming -r app/build/outputs/apk/debug/app-debug.apk
+            adb install --no-streaming app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -W -n com.mensagemstudio.jarvis/.PermissionSetupActivity
             adb shell dumpsys package com.mensagemstudio.jarvis | grep -E "versionName|versionCode|targetSdk|minSdk|PermissionSetupActivity|JarvisAccessibilityService|JarvisNotificationListenerService" | head -80
