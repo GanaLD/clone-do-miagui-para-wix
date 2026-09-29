@@ -32,23 +32,26 @@ jobs:
       - name: Apply Google TTS and human voice tuning
         run: python3 scripts/tune_tts.py
 
+      - name: Wire device-control tools
+        run: python3 scripts/enable_device_control.py
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Verify APK signature and assistant manifest
+      - name: Verify APK signature and device-control manifest
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | head -40
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml | grep -E "JarvisVoiceInteractionService|JarvisService|BIND_VOICE_INTERACTION|com.google.android.tts" || true
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml | grep -E "PermissionSetupActivity|JarvisAccessibilityService|JarvisNotificationListenerService|JarvisVoiceInteractionService|READ_MEDIA_AUDIO|CALL_PHONE|READ_CONTACTS" || true
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-Voice-Agent-v1.4-Human-Voices-Android16.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-Voice-Agent-v1.5-Device-Control-Android16.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-HELENA-Voice-Agent-v1.4-Human-Voices-Android16
-          path: JARVIS-HELENA-Voice-Agent-v1.4-Human-Voices-Android16.apk
+          name: JARVIS-HELENA-Voice-Agent-v1.5-Device-Control-Android16
+          path: JARVIS-HELENA-Voice-Agent-v1.5-Device-Control-Android16.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -64,6 +67,5 @@ jobs:
             adb shell settings put global verifier_verify_adb_installs 0 || true
             adb shell settings put global package_verifier_enable 0 || true
             adb install --no-streaming -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm list packages | grep com.mensagemstudio.jarvis
-            adb shell am start -W -n com.mensagemstudio.jarvis/.MainActivity
-            adb shell dumpsys package com.mensagemstudio.jarvis | grep -E "versionName|versionCode|targetSdk|minSdk|JarvisVoiceInteractionService" | head -40
+            adb shell am start -W -n com.mensagemstudio.jarvis/.PermissionSetupActivity
+            adb shell dumpsys package com.mensagemstudio.jarvis | grep -E "versionName|versionCode|targetSdk|minSdk|PermissionSetupActivity|JarvisAccessibilityService|JarvisNotificationListenerService" | head -80
