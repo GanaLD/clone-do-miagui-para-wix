@@ -29,6 +29,84 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Apply Google TTS and human voice tuning
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path("app/src/main/java/com/mensagemstudio/jarvis/JarvisService.java")
+          text = path.read_text(encoding="utf-8")
+
+          old = "    private boolean ttsReady;\n"
+          new = "    private boolean ttsReady;\n    private boolean googleTtsRequested = true;\n"
+          assert old in text, "ttsReady field not found"
+          text = text.replace(old, new, 1)
+
+          old = "        tts = new TextToSpeech(this, this);\n"
+          new = "        tts = new TextToSpeech(this, this, \"com.google.android.tts\");\n"
+          assert old in text, "TTS initialization not found"
+          text = text.replace(old, new, 1)
+
+          old = '''        if (status != TextToSpeech.SUCCESS) {
+            ttsReady = false;
+            sendStatus("Voz do Android indisponível", "error");
+            busy = false;
+            scheduleListen(350);
+            return;
+        }
+'''
+          new = '''        if (status != TextToSpeech.SUCCESS) {
+            if (googleTtsRequested) {
+                googleTtsRequested = false;
+                sendStatus("Voz Google indisponível · usando mecanismo padrão do Android", "tts_fallback");
+                try { if (tts != null) tts.shutdown(); } catch (Exception ignored) {}
+                tts = new TextToSpeech(this, this);
+                return;
+            }
+            ttsReady = false;
+            sendStatus("Voz do Android indisponível", "error");
+            busy = false;
+            scheduleListen(350);
+            return;
+        }
+'''
+          assert old in text, "onInit failure block not found"
+          text = text.replace(old, new, 1)
+
+          old = '''                    int score = voice.getQuality();
+                    String voiceName = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
+                    for (String token : profile.preferredVoiceTokens) {
+                        if (voiceName.contains(token.toLowerCase(Locale.ROOT))) score += 10000;
+                    }
+                    if (best == null || score > bestScore) {
+'''
+          new = '''                    int score = voice.getQuality() * 10;
+                    String voiceName = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
+                    boolean looksFemale = voiceName.contains("female") || voiceName.contains("femin") || voiceName.contains("mulher");
+                    boolean looksMale = (voiceName.contains("male") && !looksFemale) || voiceName.contains("mascul") || voiceName.contains("homem");
+                    if (profile == AssistantProfile.HELENA) {
+                        if (looksFemale) score += 50000;
+                        if (looksMale) score -= 50000;
+                    } else {
+                        if (looksMale) score += 50000;
+                        if (looksFemale) score -= 50000;
+                    }
+                    if (voice.isNetworkConnectionRequired()) score += 1800;
+                    for (String token : profile.preferredVoiceTokens) {
+                        if (voiceName.contains(token.toLowerCase(Locale.ROOT))) score += 10000;
+                    }
+                    if (best == null || score > bestScore) {
+'''
+          assert old in text, "voice scoring block not found"
+          text = text.replace(old, new, 1)
+
+          old = '        sendStatus("Voz pronta · " + profile.name, "tts_ready");\n'
+          new = '        sendStatus("Voz pronta · " + profile.name + (googleTtsRequested ? " · Google" : " · Android"), "tts_ready");\n'
+          assert old in text, "tts ready status not found"
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
@@ -36,16 +114,16 @@ jobs:
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | head -40
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml | grep -E "JarvisVoiceInteractionService|JarvisService|BIND_VOICE_INTERACTION" || true
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml | grep -E "JarvisVoiceInteractionService|JarvisService|BIND_VOICE_INTERACTION|com.google.android.tts" || true
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-Voice-Agent-v1.3-Android16.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-Voice-Agent-v1.4-Human-Voices-Android16.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-HELENA-Voice-Agent-v1.3-Android16
-          path: JARVIS-HELENA-Voice-Agent-v1.3-Android16.apk
+          name: JARVIS-HELENA-Voice-Agent-v1.4-Human-Voices-Android16
+          path: JARVIS-HELENA-Voice-Agent-v1.4-Human-Voices-Android16.apk
           if-no-files-found: error
           retention-days: 30
 
