@@ -38,13 +38,13 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | head -40
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-Voice-Assistant-v1.1-Android16.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-Voice-Assistant-v1.2-Android16.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-Voice-Assistant-v1.1-Android16
-          path: JARVIS-Voice-Assistant-v1.1-Android16.apk
+          name: JARVIS-HELENA-Voice-Assistant-v1.2-Android16
+          path: JARVIS-HELENA-Voice-Assistant-v1.2-Android16.apk
           if-no-files-found: error
           retention-days: 30
 
