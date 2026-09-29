@@ -18,44 +18,45 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android platform
+      - name: Install Android 16 platform
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.10.2'
+          gradle-version: '8.11.1'
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Verify APK signature and manifest
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | head -30
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | head -40
 
-      - name: Install and launch on Android emulator
+      - name: Install and launch on Android 16 emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 36
           arch: x86_64
           profile: pixel_6
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm list packages | grep com.mensagemstudio.jarvis
             adb shell am start -W -n com.mensagemstudio.jarvis/.MainActivity
-            adb shell dumpsys package com.mensagemstudio.jarvis | head -80
+            adb shell dumpsys package com.mensagemstudio.jarvis | grep -E "versionName|versionCode|targetSdk|minSdk" | head -20
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-Voice-Assistant-v1.1.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-Voice-Assistant-v1.1-Android16.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-Voice-Assistant-v1.1
-          path: JARVIS-Voice-Assistant-v1.1.apk
+          name: JARVIS-Voice-Assistant-v1.1-Android16
+          path: JARVIS-Voice-Assistant-v1.1-Android16.apk
           if-no-files-found: error
           retention-days: 30
