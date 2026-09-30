@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission
+        android:name="com.mensagemstudio.jarvis.permission.CONTROL"
+        android:protectionLevel="signature" />
+
+    <uses-permission android:name="com.mensagemstudio.jarvis.permission.CONTROL" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -18,6 +23,7 @@
         <package android:name="com.whatsapp" />
         <package android:name="com.google.android.youtube" />
         <package android:name="com.openai.chatgpt" />
+        <package android:name="com.mensagemstudio.jarviscontrol" />
     </queries>
 
     <application
