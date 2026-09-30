@@ -10,14 +10,19 @@ android {
         applicationId 'com.mensagemstudio.jarvis'
         minSdk 26
         targetSdk 36
-        versionCode 11
-        versionName '1.9.0'
+        versionCode 12
+        versionName '1.10.0'
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+tasks.register('forceLocalJarvisVoice', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'scripts/use_local_jarvis_voice.py'
 }
 
 tasks.register('embedControlApk') {
@@ -38,5 +43,6 @@ tasks.register('embedControlApk') {
 }
 
 tasks.named('preBuild').configure {
+    dependsOn tasks.named('forceLocalJarvisVoice')
     dependsOn tasks.named('embedControlApk')
 }
