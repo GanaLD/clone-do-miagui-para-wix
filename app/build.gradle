@@ -19,3 +19,24 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+tasks.register('embedControlApk') {
+    dependsOn ':control:assembleDebug'
+    doLast {
+        def sourceApk = file('../control/build/outputs/apk/debug/control-debug.apk')
+        if (!sourceApk.exists()) {
+            throw new GradleException('Control companion APK was not produced')
+        }
+        def assetsDir = file('src/main/assets')
+        assetsDir.mkdirs()
+        copy {
+            from sourceApk
+            into assetsDir
+            rename { 'JARVIS-Control-v1.0-Android16.apk' }
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('embedControlApk')
+}
