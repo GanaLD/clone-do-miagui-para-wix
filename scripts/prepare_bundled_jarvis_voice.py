@@ -7,13 +7,21 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 LIBS = ROOT / "app" / "libs"
-ASSETS = ROOT / "app" / "src" / "main" / "assets" / "jarvis_voice"
+ASSETS = ROOT / "app" / "src" / "main" / "assets"
+JARVIS_ASSETS = ASSETS / "jarvis_voice"
+HELENA_ASSETS = ASSETS / "helena_voice"
 AAR = LIBS / "sherpa-onnx-1.13.8.aar"
-MODEL_DIR = ASSETS / "vits-piper-pt_BR-faber-medium"
+
+JARVIS_MODEL_DIR = JARVIS_ASSETS / "vits-piper-pt_BR-faber-medium"
+JARVIS_MODEL_FILE = "pt_BR-faber-medium.onnx"
+JARVIS_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2"
+
+HELENA_MODEL_DIR = HELENA_ASSETS / "vits-piper-pt_BR-dii-high"
+HELENA_MODEL_FILE = "pt_BR-dii-high.onnx"
+HELENA_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-dii-high.tar.bz2"
 
 AAR_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar"
 AAR_SHA256 = "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96"
-MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2"
 
 
 def sha256(path: Path) -> str:
@@ -26,8 +34,8 @@ def sha256(path: Path) -> str:
 
 def download(url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "JARVIS-Android-Build/1.11"})
-    with urllib.request.urlopen(request, timeout=180) as response, destination.open("wb") as out:
+    request = urllib.request.Request(url, headers={"User-Agent": "JARVIS-Android-Build/1.12"})
+    with urllib.request.urlopen(request, timeout=240) as response, destination.open("wb") as out:
         shutil.copyfileobj(response, out, length=1024 * 1024)
 
 
@@ -46,51 +54,69 @@ def prepare_aar() -> None:
     print(f"Sherpa AAR verified: {digest}")
 
 
-def model_ready() -> bool:
+def model_ready(model_dir: Path, model_file: str) -> bool:
     return (
-        (MODEL_DIR / "pt_BR-faber-medium.onnx").is_file()
-        and (MODEL_DIR / "tokens.txt").is_file()
-        and (MODEL_DIR / "espeak-ng-data").is_dir()
+        (model_dir / model_file).is_file()
+        and (model_dir / "tokens.txt").is_file()
+        and (model_dir / "espeak-ng-data").is_dir()
     )
 
 
-def prepare_model() -> None:
-    if model_ready():
-        print(f"Bundled JARVIS model ready: {MODEL_DIR}")
+def prepare_model(label: str, url: str, model_dir: Path, model_file: str) -> None:
+    if model_ready(model_dir, model_file):
+        print(f"Bundled {label} model ready: {model_dir}")
         return
 
-    ASSETS.mkdir(parents=True, exist_ok=True)
-    if MODEL_DIR.exists():
-        shutil.rmtree(MODEL_DIR)
+    model_dir.parent.mkdir(parents=True, exist_ok=True)
+    if model_dir.exists():
+        shutil.rmtree(model_dir)
 
-    with tempfile.TemporaryDirectory(prefix="jarvis-voice-") as tmp:
+    with tempfile.TemporaryDirectory(prefix=f"{label.lower()}-voice-") as tmp:
         tmp_path = Path(tmp)
         archive = tmp_path / "voice.tar.bz2"
         extract_dir = tmp_path / "extract"
         extract_dir.mkdir()
-        print("Downloading pt-BR male neural voice model (Faber medium)...")
-        download(MODEL_URL, archive)
-        print(f"Voice archive downloaded: {archive.stat().st_size} bytes, sha256={sha256(archive)}")
+        print(f"Downloading {label} neural voice model...")
+        download(url, archive)
+        print(f"{label} archive downloaded: {archive.stat().st_size} bytes, sha256={sha256(archive)}")
         with tarfile.open(archive, "r:bz2") as tar:
             tar.extractall(extract_dir, filter="data")
 
-        candidates = list(extract_dir.rglob("pt_BR-faber-medium.onnx"))
+        candidates = list(extract_dir.rglob(model_file))
         if not candidates:
-            raise RuntimeError("Voice archive does not contain pt_BR-faber-medium.onnx")
+            raise RuntimeError(f"{label} voice archive does not contain {model_file}")
         source_dir = candidates[0].parent
         if not (source_dir / "tokens.txt").is_file():
-            raise RuntimeError("Voice archive does not contain tokens.txt")
+            raise RuntimeError(f"{label} voice archive does not contain tokens.txt")
         if not (source_dir / "espeak-ng-data").is_dir():
-            raise RuntimeError("Voice archive does not contain espeak-ng-data")
-        shutil.copytree(source_dir, MODEL_DIR)
+            raise RuntimeError(f"{label} voice archive does not contain espeak-ng-data")
+        shutil.copytree(source_dir, model_dir)
 
-    if not model_ready():
-        raise RuntimeError("Bundled JARVIS model failed verification after extraction")
-    total = sum(p.stat().st_size for p in MODEL_DIR.rglob("*") if p.is_file())
-    print(f"Bundled JARVIS voice prepared: {total} bytes")
+    if not model_ready(model_dir, model_file):
+        raise RuntimeError(f"Bundled {label} model failed verification after extraction")
+    total = sum(p.stat().st_size for p in model_dir.rglob("*") if p.is_file())
+    print(f"Bundled {label} voice prepared: {total} bytes")
+
+
+def write_voice_notice() -> None:
+    notice = ASSETS / "VOICE_MODELS_NOTICE.txt"
+    notice.write_text(
+        "JARVIS voice\n"
+        "Model: vits-piper-pt_BR-faber-medium\n"
+        "Source: rhasspy/piper-voices / sherpa-onnx packaged model\n"
+        "Dataset license reported by model card: CC0.\n\n"
+        "HELENA voice\n"
+        "Model: vits-piper-pt_BR-dii-high\n"
+        "Source: OpenVoiceOS/TigreGotico, packaged by sherpa-onnx.\n"
+        "Voice/model license: CC BY-NC-ND 4.0 as reported by the upstream model card.\n"
+        "This prototype build is for non-commercial use unless a commercial license is obtained from the rights holder.\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":
     prepare_aar()
-    prepare_model()
-    print("Bundled offline JARVIS voice assets are ready")
+    prepare_model("JARVIS", JARVIS_MODEL_URL, JARVIS_MODEL_DIR, JARVIS_MODEL_FILE)
+    prepare_model("HELENA", HELENA_MODEL_URL, HELENA_MODEL_DIR, HELENA_MODEL_FILE)
+    write_voice_notice()
+    print("Bundled offline JARVIS + HELENA voice assets are ready")
