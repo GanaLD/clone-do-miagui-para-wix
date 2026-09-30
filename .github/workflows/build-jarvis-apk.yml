@@ -41,37 +41,43 @@ jobs:
           test -f ~/.android/debug.keystore
           keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | grep -E "SHA256:|Owner:|Valid from"
 
-      - name: Apply Google TTS dual-voice tuning
+      - name: Apply Android TTS emergency fallback tuning
         run: python3 scripts/tune_tts.py
 
       - name: Add separate JARVIS and HELENA voice controls
         run: python3 scripts/dual_voice_ui.py
 
-      - name: Fix runtime response and JARVIS ElevenLabs playback
+      - name: Fix runtime response and JARVIS Control bridge
         run: python3 scripts/runtime_response_fix.py
 
-      - name: Build install-safe APK
+      - name: Build v1.12 with both bundled neural voices
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Verify signature and install-safe manifest
+      - name: Verify signature manifest and bundled voices
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | head -40
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml > /tmp/manifest.txt
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | head -40
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml > /tmp/manifest.txt
           grep -E "JarvisVoiceInteractionService|READ_MEDIA_AUDIO|CALL_PHONE|READ_CONTACTS" /tmp/manifest.txt || true
           if grep -E "JarvisAccessibilityService|JarvisNotificationListenerService|BIND_ACCESSIBILITY_SERVICE|BIND_NOTIFICATION_LISTENER_SERVICE" /tmp/manifest.txt; then
-            echo "Restricted control service leaked into install-safe APK" >&2
+            echo "Restricted control service leaked into main APK" >&2
             exit 1
           fi
+          unzip -l "$APK" | grep -E "assets/jarvis_voice/.+pt_BR-faber-medium.onnx$"
+          unzip -l "$APK" | grep -E "assets/helena_voice/.+pt_BR-dii-high.onnx$"
+          unzip -l "$APK" | grep "assets/VOICE_MODELS_NOTICE.txt"
+          ls -lh "$APK"
+          sha256sum "$APK"
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-v1.8-Response-Fix-Android16.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-v1.12-Dual-Bundled-Voices-Android16.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-HELENA-v1.8-Response-Fix-Android16
-          path: JARVIS-HELENA-v1.8-Response-Fix-Android16.apk
+          name: JARVIS-HELENA-v1.12-Dual-Bundled-Voices-Android16
+          path: JARVIS-HELENA-v1.12-Dual-Bundled-Voices-Android16.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -83,7 +89,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            adb install --no-streaming app/build/outputs/apk/debug/app-debug.apk
+            adb install --no-streaming JARVIS-HELENA-v1.12-Dual-Bundled-Voices-Android16.apk
             adb shell pm grant com.mensagemstudio.jarvis android.permission.RECORD_AUDIO || true
             adb shell pm grant com.mensagemstudio.jarvis android.permission.POST_NOTIFICATIONS || true
             adb shell am start -W -n com.mensagemstudio.jarvis/.MainActivity
