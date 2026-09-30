@@ -3,7 +3,6 @@ from pathlib import Path
 service_path = Path("app/src/main/java/com/mensagemstudio/jarvis/JarvisService.java")
 text = service_path.read_text(encoding="utf-8")
 
-# Imports for remote JARVIS audio playback.
 text = text.replace(
     "import android.media.AudioAttributes;\n",
     "import android.media.AudioAttributes;\nimport android.media.MediaPlayer;\n",
@@ -14,27 +13,22 @@ text = text.replace(
     "import java.io.BufferedReader;\nimport java.io.File;\nimport java.io.FileOutputStream;\n",
     1,
 )
-
-# Voice endpoint lives beside the GPT endpoint.
 text = text.replace(
     '    private static final String BACKEND = "https://jarvis-gpt-mobile.floot.app/_api/native";\n',
     '    private static final String BACKEND = "https://jarvis-gpt-mobile.floot.app/_api/native";\n'
     '    private static final String SPEECH_BACKEND = "https://jarvis-gpt-mobile.floot.app/_api/speech";\n',
     1,
 )
-
 text = text.replace(
     "    private TextToSpeech tts;\n",
     "    private TextToSpeech tts;\n    private MediaPlayer remotePlayer;\n",
     1,
 )
 
-# Samsung/on-device recognition can advertise support before the pt-BR pack is actually usable.
-# Prefer the phone's normal recognition service; it is considerably more reliable for wake words.
+# Prefer the phone's normal recognition service. Samsung can advertise on-device
+# pt-BR support before the offline model is usable, causing silent wake-word failures.
 text = text.replace("        initRecognizer(true);\n", "        initRecognizer(false);\n", 1)
 
-# Improve result selection: if one of Google's alternate hypotheses contains the wake word,
-# use it instead of blindly accepting the first hypothesis.
 old = '''        ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
         if (matches != null && !matches.isEmpty()) handleTranscript(matches.get(0));
         else scheduleListen(350);
@@ -58,7 +52,6 @@ new = '''        ArrayList<String> matches = results.getStringArrayList(SpeechRe
 assert old in text, "onResults anchor not found"
 text = text.replace(old, new, 1)
 
-# Surface the actual network failure in the in-app diagnostic instead of silently swallowing it.
 old = '''            try {
                 finalReply = runAgentLoop(command, previousHistory);
             } catch (Exception e) {
@@ -76,7 +69,6 @@ new = '''            try {
 assert old in text, "GPT exception anchor not found"
 text = text.replace(old, new, 1)
 
-# JARVIS uses ElevenLabs through the backend. HELENA keeps the female Android/Google voice.
 old = '''    private void speak(String text, boolean completedCommand) {
         busy = true;
         stopListeningQuietly();
@@ -123,7 +115,7 @@ new = '''    private void speak(String text, boolean completedCommand) {
             try {
                 audioFile = downloadJarvisAudio(text);
                 File ready = audioFile;
-                main.post(() -> playJarvisAudio(ready, completedCommand));
+                main.post(() -> playJarvisAudio(ready, text, completedCommand));
             } catch (Exception error) {
                 if (audioFile != null) try { audioFile.delete(); } catch (Exception ignored) {}
                 String detail = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
@@ -174,7 +166,7 @@ new = '''    private void speak(String text, boolean completedCommand) {
         return file;
     }
 
-    private void playJarvisAudio(File file, boolean completedCommand) {
+    private void playJarvisAudio(File file, String fallbackText, boolean completedCommand) {
         try {
             releaseRemotePlayer();
             remotePlayer = new MediaPlayer();
@@ -196,7 +188,7 @@ new = '''    private void speak(String text, boolean completedCommand) {
                 remotePlayer = null;
                 try { file.delete(); } catch (Exception ignored) {}
                 sendStatus("Falha ao reproduzir voz ElevenLabs · usando voz local", "tts_fallback");
-                speakLocal(profile.randomGreeting(AssistantPreferences.getAddressName(this)), completedCommand);
+                speakLocal(fallbackText, completedCommand);
                 return true;
             });
             remotePlayer.prepare();
@@ -206,7 +198,7 @@ new = '''    private void speak(String text, boolean completedCommand) {
             try { file.delete(); } catch (Exception ignored) {}
             releaseRemotePlayer();
             sendStatus("Falha ao iniciar voz ElevenLabs · usando voz local", "tts_fallback");
-            speakLocal(profile.randomGreeting(AssistantPreferences.getAddressName(this)), completedCommand);
+            speakLocal(fallbackText, completedCommand);
         }
     }
 
@@ -237,7 +229,6 @@ text = text.replace(old, new, 1)
 
 service_path.write_text(text, encoding="utf-8")
 
-# Make the central orb useful as a manual recovery path: tapping it restarts listening.
 activity_path = Path("app/src/main/java/com/mensagemstudio/jarvis/MainActivity.java")
 activity = activity_path.read_text(encoding="utf-8")
 orb_anchor = '''        orb.setGravity(Gravity.CENTER);
