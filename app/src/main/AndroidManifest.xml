@@ -29,7 +29,7 @@
         android:usesCleartextTraffic="false">
 
         <activity
-            android:name=".PermissionSetupActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>
@@ -38,37 +38,10 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="false"
-            android:launchMode="singleTop" />
-
         <service
             android:name=".JarvisService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
-
-        <service
-            android:name=".JarvisAccessibilityService"
-            android:exported="true"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
-
-        <service
-            android:name=".JarvisNotificationListenerService"
-            android:exported="true"
-            android:label="JARVIS / HELENA"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
 
         <service
             android:name=".JarvisVoiceInteractionService"
