@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <permission
-        android:name="com.mensagemstudio.jarvis.permission.CONTROL"
-        android:protectionLevel="signature" />
-
-    <uses-permission android:name="com.mensagemstudio.jarvis.permission.CONTROL" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -15,6 +10,7 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="com.mensagemstudio.jarvis.control.permission.BRIDGE" />
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
 
     <queries>
@@ -23,7 +19,7 @@
         <package android:name="com.whatsapp" />
         <package android:name="com.google.android.youtube" />
         <package android:name="com.openai.chatgpt" />
-        <package android:name="com.mensagemstudio.jarviscontrol" />
+        <package android:name="com.mensagemstudio.jarvis.control" />
     </queries>
 
     <application
