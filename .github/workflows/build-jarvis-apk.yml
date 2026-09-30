@@ -36,49 +36,39 @@ jobs:
           path: ~/.android/debug.keystore
           key: jarvis-android-signing-key-v1
 
-      - name: Create stable JARVIS signing key
-        if: steps.signing-cache.outputs.cache-hit != 'true'
+      - name: Require existing stable signing key
         run: |
-          mkdir -p ~/.android
-          keytool -genkeypair -v \
-            -keystore ~/.android/debug.keystore \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -dname "CN=JARVIS Android,O=Mensagem Studio,C=BR" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000
-
-      - name: Print signing certificate fingerprint
-        run: keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | grep -E "SHA256:|Owner:|Valid from"
+          test -f ~/.android/debug.keystore
+          keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | grep -E "SHA256:|Owner:|Valid from"
 
       - name: Apply Google TTS dual-voice tuning
         run: python3 scripts/tune_tts.py
 
-      - name: Wire device-control tools
-        run: python3 scripts/enable_device_control.py
-
       - name: Add separate JARVIS and HELENA voice controls
         run: python3 scripts/dual_voice_ui.py
 
-      - name: Build debug APK
+      - name: Build install-safe APK
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Verify APK signature and device-control manifest
+      - name: Verify signature and install-safe manifest
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | head -40
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml | grep -E "PermissionSetupActivity|JarvisAccessibilityService|JarvisNotificationListenerService|JarvisVoiceInteractionService|READ_MEDIA_AUDIO|CALL_PHONE|READ_CONTACTS" || true
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml > /tmp/manifest.txt
+          grep -E "JarvisVoiceInteractionService|READ_MEDIA_AUDIO|CALL_PHONE|READ_CONTACTS" /tmp/manifest.txt || true
+          if grep -E "JarvisAccessibilityService|JarvisNotificationListenerService|BIND_ACCESSIBILITY_SERVICE|BIND_NOTIFICATION_LISTENER_SERVICE" /tmp/manifest.txt; then
+            echo "Restricted control service leaked into install-safe APK" >&2
+            exit 1
+          fi
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-Voice-Agent-v1.6.1-Stable-Signed-Android16.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-v1.7-Install-Safe-Android16.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-HELENA-Voice-Agent-v1.6.1-Stable-Signed-Android16
-          path: JARVIS-HELENA-Voice-Agent-v1.6.1-Stable-Signed-Android16.apk
+          name: JARVIS-HELENA-v1.7-Install-Safe-Android16
+          path: JARVIS-HELENA-v1.7-Install-Safe-Android16.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -90,8 +80,6 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            adb shell settings put global verifier_verify_adb_installs 0 || true
-            adb shell settings put global package_verifier_enable 0 || true
             adb install --no-streaming app/build/outputs/apk/debug/app-debug.apk
-            adb shell am start -W -n com.mensagemstudio.jarvis/.PermissionSetupActivity
-            adb shell dumpsys package com.mensagemstudio.jarvis | grep -E "versionName|versionCode|targetSdk|minSdk|PermissionSetupActivity|JarvisAccessibilityService|JarvisNotificationListenerService" | head -80
+            adb shell am start -W -n com.mensagemstudio.jarvis/.MainActivity
+            adb shell dumpsys package com.mensagemstudio.jarvis | grep -E "versionName|versionCode|targetSdk|minSdk|MainActivity|JarvisVoiceInteractionService" | head -80
