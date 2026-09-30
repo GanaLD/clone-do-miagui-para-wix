@@ -47,6 +47,9 @@ jobs:
       - name: Add separate JARVIS and HELENA voice controls
         run: python3 scripts/dual_voice_ui.py
 
+      - name: Fix runtime response and JARVIS ElevenLabs playback
+        run: python3 scripts/runtime_response_fix.py
+
       - name: Build install-safe APK
         run: gradle :app:assembleDebug --stacktrace
 
@@ -62,13 +65,13 @@ jobs:
           fi
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-v1.7-Install-Safe-Android16.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk JARVIS-HELENA-v1.8-Response-Fix-Android16.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-HELENA-v1.7-Install-Safe-Android16
-          path: JARVIS-HELENA-v1.7-Install-Safe-Android16.apk
+          name: JARVIS-HELENA-v1.8-Response-Fix-Android16
+          path: JARVIS-HELENA-v1.8-Response-Fix-Android16.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -81,5 +84,7 @@ jobs:
           disable-animations: true
           script: |
             adb install --no-streaming app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm grant com.mensagemstudio.jarvis android.permission.RECORD_AUDIO || true
+            adb shell pm grant com.mensagemstudio.jarvis android.permission.POST_NOTIFICATIONS || true
             adb shell am start -W -n com.mensagemstudio.jarvis/.MainActivity
             adb shell dumpsys package com.mensagemstudio.jarvis | grep -E "versionName|versionCode|targetSdk|minSdk|MainActivity|JarvisVoiceInteractionService" | head -80
