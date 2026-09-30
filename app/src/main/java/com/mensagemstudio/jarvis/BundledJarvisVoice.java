@@ -24,7 +24,7 @@ import java.util.concurrent.Executors;
  * Fully bundled/offline neural voice for the JARVIS identity.
  *
  * The model is packaged inside the APK under assets/jarvis_voice and copied once
- * to internal storage because sherpa-onnx's Java API loads VITS models by path.
+ * to internal storage because the neural runtime loads VITS model data by path.
  * No remote TTS service and no Android-installed JARVIS voice are required.
  */
 public final class BundledJarvisVoice {
@@ -61,8 +61,6 @@ public final class BundledJarvisVoice {
             try {
                 if (closed) throw new IllegalStateException("motor de voz encerrado");
                 OfflineTts engine = ensureEngine();
-                // 1.0 keeps articulation natural; the cinematic character is applied
-                // during playback using the same low-pitch/slower JARVIS profile.
                 GeneratedAudio audio = engine.generate(clean, 0, 1.0f);
                 float[] samples = audio.getSamples();
                 if (samples == null || samples.length == 0) {
@@ -89,30 +87,30 @@ public final class BundledJarvisVoice {
                 throw new IllegalStateException("arquivos da voz JARVIS não foram encontrados no APK");
             }
 
-            OfflineTtsVitsModelConfig vits = OfflineTtsVitsModelConfig.builder()
-                    .setModel(model.getAbsolutePath())
-                    .setTokens(tokens.getAbsolutePath())
-                    .setDataDir(data.getAbsolutePath())
-                    .setNoiseScale(0.58f)
-                    .setNoiseScaleW(0.72f)
-                    .setLengthScale(1.03f)
-                    .build();
+            // sherpa-onnx's Android AAR exposes its Kotlin data classes to Java
+            // through no-arg constructors + generated setters.
+            OfflineTtsVitsModelConfig vits = new OfflineTtsVitsModelConfig();
+            vits.setModel(model.getAbsolutePath());
+            vits.setTokens(tokens.getAbsolutePath());
+            vits.setDataDir(data.getAbsolutePath());
+            vits.setNoiseScale(0.58f);
+            vits.setNoiseScaleW(0.72f);
+            vits.setLengthScale(1.03f);
 
             int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
-            OfflineTtsModelConfig modelConfig = OfflineTtsModelConfig.builder()
-                    .setVits(vits)
-                    .setNumThreads(threads)
-                    .setDebug(false)
-                    .setProvider("cpu")
-                    .build();
+            OfflineTtsModelConfig modelConfig = new OfflineTtsModelConfig();
+            modelConfig.setVits(vits);
+            modelConfig.setNumThreads(threads);
+            modelConfig.setDebug(false);
+            modelConfig.setProvider("cpu");
 
-            OfflineTtsConfig config = OfflineTtsConfig.builder()
-                    .setModel(modelConfig)
-                    .setMaxNumSentences(2)
-                    .setSilenceScale(0.16f)
-                    .build();
+            OfflineTtsConfig config = new OfflineTtsConfig();
+            config.setModel(modelConfig);
+            config.setMaxNumSentences(2);
+            config.setSilenceScale(0.16f);
 
-            tts = new OfflineTts(config);
+            // null AssetManager means model/config paths above are filesystem paths.
+            tts = new OfflineTts(null, config);
             return tts;
         }
     }
@@ -185,7 +183,6 @@ public final class BundledJarvisVoice {
                     .setSpeed(0.96f);
             track.setPlaybackParams(params);
         } catch (Throwable ignored) {
-            // Some OEM audio stacks reject custom pitch; the neural model still plays.
         }
         track.play();
         int offset = 0;
