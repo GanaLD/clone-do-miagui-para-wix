@@ -50,6 +50,9 @@ jobs:
       - name: Fix runtime response and JARVIS Control bridge
         run: python3 scripts/runtime_response_fix.py
 
+      - name: Fix HELENA sherpa Android API
+        run: python3 scripts/fix_helena_sherpa_api.py
+
       - name: Build v1.12 with both bundled neural voices
         run: gradle :app:assembleDebug --stacktrace
 
