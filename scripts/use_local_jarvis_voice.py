@@ -4,12 +4,30 @@ import re
 path = Path("app/src/main/java/com/mensagemstudio/jarvis/JarvisService.java")
 text = path.read_text(encoding="utf-8")
 
-# Remove external voice provider imports/fields/constants added by the runtime patch.
+# runtime_response_fix.py historically injects remote ElevenLabs playback. Strip it
+# completely and wire JARVIS to the neural model packaged inside this APK instead.
 text = text.replace("import android.media.MediaPlayer;\n", "")
 text = text.replace("import java.io.File;\n", "")
 text = text.replace("import java.io.FileOutputStream;\n", "")
 text = text.replace('    private static final String SPEECH_BACKEND = "https://jarvis-gpt-mobile.floot.app/_api/speech";\n', "")
 text = text.replace("    private MediaPlayer remotePlayer;\n", "")
+
+if "private BundledJarvisVoice jarvisVoice;" not in text:
+    text = text.replace(
+        "    private TextToSpeech tts;\n",
+        "    private TextToSpeech tts;\n    private BundledJarvisVoice jarvisVoice;\n",
+        1,
+    )
+
+init_anchor = "        toolExecutor = new AgentToolExecutor(this);\n"
+if "jarvisVoice = new BundledJarvisVoice(this);" not in text:
+    if init_anchor not in text:
+        raise SystemExit("JarvisService init anchor not found")
+    text = text.replace(
+        init_anchor,
+        init_anchor + "        jarvisVoice = new BundledJarvisVoice(this);\n",
+        1,
+    )
 
 remote_branch = '''        if (profile == AssistantProfile.JARVIS) {
             speakJarvisRemote(text, completedCommand);
@@ -17,16 +35,17 @@ remote_branch = '''        if (profile == AssistantProfile.JARVIS) {
         }
         speakLocal(text, completedCommand);
 '''
-local_branch = '''        // Both identities use local Android/Google TTS with separate voice profiles.
-        // JARVIS keeps the integrated masculine cinematic profile; HELENA keeps
-        // the feminine profile. No external TTS credential or provider is used.
+bundled_branch = '''        if (profile == AssistantProfile.JARVIS) {
+            speakJarvisBundled(text, completedCommand);
+            return;
+        }
         speakLocal(text, completedCommand);
 '''
 if remote_branch not in text:
     raise SystemExit("Remote JARVIS branch not found")
-text = text.replace(remote_branch, local_branch, 1)
+text = text.replace(remote_branch, bundled_branch, 1)
 
-# Remove all now-dead remote audio methods.
+# Delete all remote-network voice methods and keep the local speakNow method.
 text, count = re.subn(
     r'\n    private void speakJarvisRemote\(String text, boolean completedCommand\) \{.*?\n    private void speakNow\(String text, boolean completedCommand\) \{',
     '\n    private void speakNow(String text, boolean completedCommand) {',
@@ -35,13 +54,62 @@ text, count = re.subn(
     flags=re.S,
 )
 if count != 1:
-    raise SystemExit("Remote JARVIS methods not found")
-
-# Remove the remote player shutdown hook left by the earlier patch.
+    raise SystemExit("Remote JARVIS voice method block not found")
 text = text.replace("        releaseRemotePlayer();\n", "")
 
-if "ElevenLabs" in text or "SPEECH_BACKEND" in text or "speakJarvisRemote" in text:
-    raise SystemExit("External JARVIS voice code still present")
+bundled_method = '''
+    private void speakJarvisBundled(String text, boolean completedCommand) {
+        currentSpeechCompletedCommand = completedCommand;
+        sendStatus("Voz JARVIS · neural integrada no APK", "tts_loading");
+        if (jarvisVoice == null) {
+            sendStatus("Motor de voz JARVIS não inicializado · usando fallback local", "tts_fallback");
+            speakLocal(text, completedCommand);
+            return;
+        }
+        jarvisVoice.speak(text, new BundledJarvisVoice.Callback() {
+            @Override
+            public void onComplete() {
+                main.post(() -> finishSpeech(completedCommand));
+            }
+
+            @Override
+            public void onError(String detail) {
+                main.post(() -> {
+                    sendStatus("Falha na voz JARVIS integrada · " + detail + " · usando fallback local", "tts_fallback");
+                    speakLocal(text, completedCommand);
+                });
+            }
+        });
+    }
+
+'''
+speak_now_anchor = "    private void speakNow(String text, boolean completedCommand) {\n"
+if speak_now_anchor not in text:
+    raise SystemExit("speakNow anchor not found")
+text = text.replace(speak_now_anchor, bundled_method + speak_now_anchor, 1)
+
+shutdown_anchor = '''        if (tts != null) {
+            try { tts.stop(); tts.shutdown(); } catch (Exception ignored) {}
+        }
+'''
+shutdown_replacement = '''        if (jarvisVoice != null) {
+            try { jarvisVoice.close(); } catch (Exception ignored) {}
+            jarvisVoice = null;
+        }
+        if (tts != null) {
+            try { tts.stop(); tts.shutdown(); } catch (Exception ignored) {}
+        }
+'''
+if shutdown_anchor not in text:
+    raise SystemExit("JarvisService shutdown anchor not found")
+text = text.replace(shutdown_anchor, shutdown_replacement, 1)
+
+for forbidden in ["ElevenLabs", "SPEECH_BACKEND", "speakJarvisRemote", "downloadJarvisAudio", "remotePlayer"]:
+    if forbidden in text:
+        raise SystemExit(f"External voice residue still present: {forbidden}")
+
+if "speakJarvisBundled" not in text or "BundledJarvisVoice" not in text:
+    raise SystemExit("Bundled JARVIS voice wiring missing")
 
 path.write_text(text, encoding="utf-8")
-print("JARVIS external voice code removed; local integrated profile active")
+print("JARVIS wired to the neural voice model bundled inside the APK")
